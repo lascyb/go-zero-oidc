@@ -23,7 +23,4 @@ go.work.sum
 
 # env file
 .env
-/.idea/.gitignore
-/.idea/go-zero-oidc.iml
-/.idea/modules.xml
-/.idea/vcs.xml
+/.idea/

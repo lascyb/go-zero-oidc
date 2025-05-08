@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package template;
+
+option go_package = "./oidc";
+
+// OIDC服务定义 - 基于OpenID Connect协议实现的身份认证与授权服务
+service OIDC {
+  // 授权端点 - 用于用户验证和授权获取
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  
+  // 令牌端点 - 用于客户端获取令牌
+  rpc Token(TokenRequest) returns (TokenResponse);
+  
+  // 用户信息端点 - 获取已认证用户的信息
+  rpc UserInfo(UserInfoRequest) returns (UserInfoResponse);
+  
+  // 令牌撤销端点 - 用于撤销访问令牌或刷新令牌
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeResponse);
+  
+  // 会话管理 - 注销端点
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+  
+  // 验证身份验证请求
+  rpc ValidateAuthRequest(ValidateAuthRequestRequest) returns (ValidateAuthRequestResponse);
+  
+  // 处理用户登录
+  rpc ProcessLogin(ProcessLoginRequest) returns (ProcessLoginResponse);
+  
+  // 处理用户授权确认
+  rpc ProcessConsent(ProcessConsentRequest) returns (ProcessConsentResponse);
+  
+  // 令牌内省 - 验证令牌有效性并返回相关信息
+  // 参考: https://tools.ietf.org/html/rfc7662
+  rpc IntrospectToken(IntrospectTokenRequest) returns (IntrospectTokenResponse);
+}
+
+// 授权请求参数
+message AuthorizeRequest {
+  string response_type = 1; // 响应类型：code(授权码流程), token/id_token(隐式流程)
+  string client_id = 2;     // 客户端标识符
+  string redirect_uri = 3;  // 重定向URI，认证完成后将用户重定向到此地址
+  optional string scope = 4;         // 请求的授权范围，空格分隔，如：openid profile email
+  optional string state = 5;         // 客户端状态值，服务端会原样返回，用于防止CSRF攻击
+  optional string nonce = 6;         // 随机字符串值，会包含在ID令牌中，用于防止重放攻击
+  optional string display = 7;       // 认证界面展示方式：page(页面)、popup(弹窗)、touch(触屏)、wap(移动设备)
+  optional string prompt = 8;        // 交互提示：none(不提示)、login(重新登录)、consent(确认授权)、select_account(选择账号)
+  optional int32 max_age = 9;        // 用户认证的最大有效时间（秒），超过时强制重新认证
+  optional string ui_locales = 10;   // 界面首选区域和语言标记，空格分隔，按优先级排序
+  optional string id_token_hint = 11; // 之前颁发的ID令牌，用于请求重新认证或校验会话状态
+  optional string login_hint = 12;   // 登录标识提示，帮助用户识别要使用的账号
+  optional string acr_values = 13;   // 请求的认证上下文引用值，空格分隔，按优先级排序
+}
+
+// 授权响应
+message AuthorizeResponse {
+  string redirect_url = 1;  // 重定向URL（包含授权码或令牌）
+  bool is_login_required = 2; // 是否需要登录
+  bool is_consent_required = 3; // 是否需要授权确认
+  optional string auth_request_id = 4; // 认证请求ID（用于后续处理）
+}
+
+// 验证身份验证请求
+message ValidateAuthRequestRequest {
+  string request_uri = 1; // 请求URI，包含所有授权参数
+}
+
+// 验证身份验证请求响应
+message ValidateAuthRequestResponse {
+  bool is_valid = 1; // 请求是否有效
+  optional string error = 2; // 错误代码
+  optional string error_description = 3; // 错误描述
+  optional AuthorizeRequest auth_request = 4; // 解析后的授权请求
+}
+
+// 处理用户登录请求
+message ProcessLoginRequest {
+  string auth_request_id = 1; // 认证请求ID
+  string username = 2; // 用户名
+  string password = 3; // 密码
+  optional bool remember = 4; // 是否记住登录状态
+}
+
+// 处理用户登录响应
+message ProcessLoginResponse {
+  bool success = 1; // 登录是否成功
+  optional string error = 2; // 错误信息
+  optional string next_step = 3; // 下一步（consent或redirect）
+  optional string redirect_url = 4; // 重定向URL
+}
+
+// 处理用户授权确认请求
+message ProcessConsentRequest {
+  string auth_request_id = 1; // 认证请求ID
+  bool approved = 2; // 用户是否批准授权
+  repeated string approved_scopes = 3; // 用户批准的作用域列表
+  optional bool remember = 4; // 是否记住授权决定
+}
+
+// 处理用户授权确认响应
+message ProcessConsentResponse {
+  bool success = 1; // 处理是否成功
+  optional string redirect_url = 2; // 重定向URL
+  optional string error = 3; // 错误信息
+}
+
+// 令牌请求参数
+message TokenRequest {
+  // 授权类型：authorization_code、refresh_token、client_credentials、password
+  string grant_type = 1;
+  
+  // authorization_code 流程需要的参数
+  optional string code = 2;          // 授权码，从授权端点获取的授权码
+  optional string redirect_uri = 3;  // 重定向URI，必须与获取授权码时使用的相同
+  optional string code_verifier = 4; // PKCE验证码（用于公共客户端）
+  
+  // 客户端身份验证
+  optional string client_id = 5;     // 客户端标识符
+  optional string client_secret = 6; // 客户端密钥，用于客户端认证
+  
+  // refresh_token 流程需要的参数
+  optional string refresh_token = 7; // 刷新令牌，用于获取新的访问令牌
+  
+  // password 授权类型需要的参数
+  optional string username = 8;      // 用户名，用于资源所有者密码凭证授权
+  optional string password = 9;      // 密码，用于资源所有者密码凭证授权
+  
+  // 通用参数
+  optional string scope = 10;        // 请求的授权范围，不能超出原始授权范围
+}
+
+// 令牌响应
+message TokenResponse {
+  optional string access_token = 1;  // 访问令牌，用于访问受保护的资源
+  optional string token_type = 2;    // 令牌类型，通常为"Bearer"
+  optional string id_token = 3;      // ID令牌，包含用户认证信息的JWT格式令牌
+  optional int32 expires_in = 4;     // 访问令牌的有效期（秒）
+  optional string refresh_token = 5; // 刷新令牌，用于获取新的访问令牌
+  optional string scope = 6;         // 已授权的范围，可能小于请求的范围
+  optional string error = 7;         // 错误代码，如有
+  optional string error_description = 8; // 错误描述，如有
+}
+
+// 用户信息请求
+message UserInfoRequest {
+  // 支持两种方式：
+  // 1. 直接包含 token (以 bearer_ 开头表示从 Authorization: Bearer xxx 标头提取)
+  // 2. 作为请求参数 (access_token=xxx)
+  string access_token = 1;
+}
+
+// 用户信息响应
+message UserInfoResponse {
+  // 必需字段
+  string sub = 1;           // 用户唯一标识
+  
+  // 可选字段（根据请求的 scope 返回）
+  optional string name = 2;          // 用户全名
+  optional string given_name = 3;    // 用户名
+  optional string family_name = 4;   // 用户姓
+  optional string middle_name = 5;   // 中间名
+  optional string nickname = 6;      // 昵称
+  optional string preferred_username = 7; // 首选用户名
+  optional string profile = 8;       // 用户资料页URL
+  optional string picture = 9;       // 头像URL
+  optional string website = 10;      // 个人网站
+  optional string email = 11;        // 电子邮件
+  optional bool email_verified = 12; // 邮件是否已验证
+  optional string gender = 13;       // 性别
+  optional string birthdate = 14;    // 出生日期
+  optional string zoneinfo = 15;     // 时区
+  optional string locale = 16;       // 本地化设置
+  optional string phone_number = 17; // 电话号码
+  optional bool phone_number_verified = 18; // 电话是否已验证
+  optional string address = 19;      // 结构化地址信息
+  optional int64 updated_at = 20;    // 信息更新时间
+  
+  // 错误字段
+  optional string error = 21;        // 错误代码
+  optional string error_description = 22; // 错误描述
+  
+  // 第三方身份字段
+  map<string, string> third_party_open_ids = 23;  // 第三方平台OpenID映射
+  map<string, string> third_party_union_ids = 24; // 第三方平台UnionID映射
+}
+
+// 令牌撤销请求
+message RevokeTokenRequest {
+  string token = 1;         // 要撤销的令牌
+  optional string token_type_hint = 2; // 令牌类型提示：access_token或refresh_token
+  optional string client_id = 3;     // 客户端标识符
+  optional string client_secret = 4; // 客户端密钥
+}
+
+// 令牌撤销响应
+message RevokeResponse {
+  bool success = 1;         // 撤销是否成功
+  optional string message = 2;       // 消息说明
+}
+
+// 会话结束请求
+message EndSessionRequest {
+  optional string id_token_hint = 1; // 之前颁发的ID令牌，用于标识会话
+  optional string post_logout_redirect_uri = 2; // 注销后重定向URI
+  optional string state = 3;         // 客户端状态值，服务端会原样返回
+}
+
+// 会话结束响应
+message EndSessionResponse {
+  optional string redirect_url = 1;  // 重定向URL
+  bool success = 2;         // 是否成功结束会话
+}
+
+// 令牌内省请求 (RFC 7662)
+message IntrospectTokenRequest {
+  string token = 1;         // 要检查的令牌
+  optional string token_type_hint = 2; // 令牌类型提示：access_token或refresh_token
+  optional string client_id = 3;     // 客户端标识符
+  optional string client_secret = 4; // 客户端密钥
+}
+
+// 令牌内省响应
+message IntrospectTokenResponse {
+  bool active = 1;         // 令牌是否有效
+  optional string scope = 2;        // 令牌授权范围
+  optional string client_id = 3;    // 客户端ID
+  optional string username = 4;     // 用户名
+  optional string token_type = 5;   // 令牌类型
+  optional int64 exp = 6;           // 过期时间
+  optional int64 iat = 7;           // 颁发时间
+  optional int64 nbf = 8;           // 生效时间
+  optional string sub = 9;          // 主题（用户标识）
+  optional string aud = 10;         // 受众
+  optional string iss = 11;         // 颁发者
+  optional string jti = 12;         // JWT ID
+}
+// 错误响应
+message ErrorResponse {
+  string error = 1;            // 错误代码，如：invalid_request、unauthorized_client、access_denied等
+  optional string error_description = 2; // 错误的详细描述
+  optional string error_uri = 3;         // 指向错误详细信息的URI
+  optional string state = 4;             // 客户端状态值，服务端会原样返回
+}
